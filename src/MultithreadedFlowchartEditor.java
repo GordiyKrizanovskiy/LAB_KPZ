@@ -363,3 +363,410 @@ private void openTestDialog() {
     testDialog.setVisible(true);
 }
 //
+class FlowchartPanel extends JPanel {
+    private List<Block> blocks;
+    private List<Connection> connections;
+    private List<String> sharedVariables;
+    private Block selectedBlock;
+    private Point dragStart;
+
+    public FlowchartPanel(List<String> sharedVariables) {
+        this.sharedVariables = sharedVariables;
+        blocks = new ArrayList<>();
+        connections = new ArrayList<>();
+        setPreferredSize(new Dimension(800, 600));
+        setBackground(Color.WHITE);
+
+        addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                handleMousePressed(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                handleMouseReleased(e);
+            }
+        });
+
+        addMouseMotionListener(new MouseMotionAdapter() {
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                handleMouseDragged(e);
+            }
+        });
+    }
+
+    public void updateVariableList(List<String> variables) {
+        this.sharedVariables = variables;
+        repaint();
+    }
+
+    public FlowchartData getFlowchartData() {
+        FlowchartData data = new FlowchartData();
+        data.setBlocks(new ArrayList<>(blocks));
+        data.setConnections(new ArrayList<>(connections));
+        return data;
+    }
+
+    public void setFlowchartData(FlowchartData data) {
+        this.blocks = new ArrayList<>(data.getBlocks());
+        this.connections = new ArrayList<>(data.getConnections());
+        repaint();
+    }
+//
+private Block findCommonContinuation(Connection trueConn, Connection falseConn) {
+    if (trueConn == null || falseConn == null) return null;
+    Block trueTarget = trueConn.getTo();
+    Block falseTarget = falseConn.getTo();
+
+    if (trueTarget == null || falseTarget == null) return null;
+
+    // BFS до кінців з кожної гілки
+    Set<Block> trueReachable = collectReachable(trueTarget);
+    Set<Block> falseReachable = collectReachable(falseTarget);
+
+    // Знайти перший спільний
+    for (Block b : trueReachable) {
+        if (falseReachable.contains(b)) return b;
+    }
+    return null;
+}
+
+    private Set<Block> collectReachable(Block start) {
+        Set<Block> visited = new HashSet<>();
+        Queue<Block> queue = new LinkedList<>();
+        queue.add(start);
+
+        while (!queue.isEmpty()) {
+            Block current = queue.poll();
+            if (!visited.add(current)) continue;
+
+            Connection conn = findConnectionFrom(current, null);
+            if (conn != null && conn.getTo() != null) {
+                queue.add(conn.getTo());
+            }
+        }
+        return visited;
+    }
+
+
+    private Connection findConnectionFrom(Block from, Boolean condition) {
+        for (Connection conn : connections) {
+            if (conn.getFrom() == from) {
+                if (condition == null && conn.condition == null) return conn;
+                if (condition != null && conn.condition != null && conn.condition.equals(condition)) return conn;
+            }
+        }
+        return null;
+    }
+
+
+    public Block findStartBlock() {
+        for (Block block : blocks) {
+            if (block.getType() == BlockType.START) {
+                return block;
+            }
+        }
+        return null;
+    }
+
+    private void handleMousePressed(MouseEvent e) {
+        if (SwingUtilities.isRightMouseButton(e)) {
+            showContextMenu(e.getPoint());
+            return;
+        }
+
+        selectedBlock = null;
+        for (Block block : blocks) {
+            if (block.isNearOutput(e.getPoint())) {
+                Connection newConn = new Connection(block, null);
+                connections.add(newConn);
+                selectedBlock = block;
+                break;
+            }
+            if (block.contains(e.getPoint())) {
+                selectedBlock = block;
+                dragStart = e.getPoint();
+                break;
+            }
+        }
+
+        repaint();
+    }
+
+    private void handleMouseDragged(MouseEvent e) {
+        if (selectedBlock != null) {
+            if (connections.stream().anyMatch(c -> c.getFrom() == selectedBlock && c.getTo() == null)) {
+                Connection conn = connections.stream()
+                        .filter(c -> c.getFrom() == selectedBlock && c.getTo() == null)
+                        .findFirst().orElse(null);
+
+                if (conn != null) {
+                    conn.setDragPoint(e.getPoint());
+                }
+            } else {
+                int dx = e.getX() - dragStart.x;
+                int dy = e.getY() - dragStart.y;
+                selectedBlock.move(dx, dy);
+                dragStart = e.getPoint();
+            }
+
+            repaint();
+        }
+    }
+
+    private void handleMouseReleased(MouseEvent e) {
+        if (selectedBlock != null) {
+            Connection incompleteConn = connections.stream()
+                    .filter(c -> c.getFrom() == selectedBlock && c.getTo() == null)
+                    .findFirst().orElse(null);
+
+            if (incompleteConn != null) {
+                for (Block block : blocks) {
+                    if (block != selectedBlock && block.contains(e.getPoint())) {
+                        incompleteConn.setTo(block);
+
+                        if (selectedBlock.getType() == BlockType.CONDITION) {
+                            String[] options = {"True (істина)", "False (хиба)"};
+                            int choice = JOptionPane.showOptionDialog(
+                                    this,
+                                    "Це перехід по гілці:",
+                                    "Вибір гілки умови",
+                                    JOptionPane.DEFAULT_OPTION,
+                                    JOptionPane.QUESTION_MESSAGE,
+                                    null,
+                                    options,
+                                    options[0]
+                            );
+                            if (choice == 0) {
+                                incompleteConn.setCondition(true);
+                            } else if (choice == 1) {
+                                incompleteConn.setCondition(false);
+                            } else {
+                                // Користувач натиснув "Закрити" — відмінити з’єднання
+                                connections.remove(incompleteConn);
+                                repaint();
+                                return;
+                            }
+                        }
+
+
+                        connections.removeIf(c ->
+                                c != incompleteConn &&
+                                        c.getFrom() == selectedBlock &&
+                                        c.getTo() == block &&
+                                        (selectedBlock.getType() != BlockType.CONDITION ||
+                                                c.isCondition() == incompleteConn.isCondition()));
+
+                        break;
+                    }
+                }
+
+                if (incompleteConn.getTo() == null) {
+                    connections.remove(incompleteConn);
+                }
+            }
+
+            selectedBlock = null;
+            repaint();
+        }
+    }
+
+    private void showContextMenu(Point point) {
+        JPopupMenu menu = new JPopupMenu();
+
+        Block clickedBlock = blocks.stream().filter(block -> block.contains(point)).findFirst().orElse(null);
+
+        if (clickedBlock != null) {
+            JMenuItem editItem = new JMenuItem("Редагувати блок");
+            editItem.addActionListener(e -> editBlock(clickedBlock));
+            menu.add(editItem);
+
+            JMenuItem deleteItem = new JMenuItem("Видалити блок");
+            deleteItem.addActionListener(e -> {
+                blocks.remove(clickedBlock);
+                connections.removeIf(c -> c.getFrom() == clickedBlock || c.getTo() == clickedBlock);
+                repaint();
+            });
+            menu.add(deleteItem);
+        } else {
+            for (BlockType type : BlockType.values()) {
+                JMenuItem item = new JMenuItem("Додати " + type);
+                item.addActionListener(e -> addNewBlock(type, point));
+                menu.add(item);
+            }
+        }
+
+        menu.show(this, point.x, point.y);
+    }
+
+    private void addNewBlock(BlockType type, Point location) {
+        Block block = new Block(type, location.x, location.y);
+
+        switch (type) {
+            case ASSIGNMENT:
+                if (!sharedVariables.isEmpty()) {
+                    block.setCode(sharedVariables.get(0) + " = " + (sharedVariables.size() > 1 ? sharedVariables.get(1) : "0"));
+                }
+                break;
+            case INPUT:
+                if (!sharedVariables.isEmpty()) {
+                    block.setCode(sharedVariables.get(0));
+                }
+                break;
+            case OUTPUT:
+                if (!sharedVariables.isEmpty()) {
+                    block.setCode(sharedVariables.get(0));
+                }
+                break;
+            case CONDITION:
+                if (!sharedVariables.isEmpty()) {
+                    block.setCode(sharedVariables.get(0) + " == 0");
+                }
+                break;
+        }
+
+        blocks.add(block);
+        repaint();
+    }
+
+    private void editBlock(Block block) {
+        JDialog editDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Редагування блоку", true);
+        editDialog.setSize(400, 200);
+        editDialog.setLayout(new BorderLayout());
+
+        JPanel contentPanel = new JPanel(new BorderLayout());
+        JLabel typeLabel = new JLabel("Тип: " + block.getType());
+        contentPanel.add(typeLabel, BorderLayout.NORTH);
+
+        if (block.getType() == BlockType.OUTPUT) {
+            // 🔽 Додано спеціальне редагування для OUTPUT
+            JComboBox<String> modeCombo = new JComboBox<>(new String[]{"Змінна", "Текст"});
+            JTextField valueField = new JTextField(block.getCode() != null ? block.getCode() : "", 20);
+
+            // Автоматичне визначення режиму
+            String code = block.getCode();
+            if (code != null && !code.trim().isEmpty()) {
+                if (code.trim().matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+                    modeCombo.setSelectedItem("Змінна");
+                } else {
+                    modeCombo.setSelectedItem("Текст");
+                }
+            }
+
+            JPanel outputPanel = new JPanel(new FlowLayout());
+            outputPanel.add(new JLabel("Режим:"));
+            outputPanel.add(modeCombo);
+            outputPanel.add(new JLabel("Значення:"));
+            outputPanel.add(valueField);
+
+            JButton saveButton = new JButton("Зберегти");
+            saveButton.addActionListener(e -> {
+                block.setCode(valueField.getText().trim());
+                editDialog.dispose();
+                repaint();
+            });
+
+            contentPanel.add(outputPanel, BorderLayout.CENTER);
+            contentPanel.add(saveButton, BorderLayout.SOUTH);
+        }
+
+        else if (block.getType() == BlockType.CONDITION || block.getType() == BlockType.ASSIGNMENT) {
+            JPanel varPanel = new JPanel(new FlowLayout());
+            JComboBox<String> varCombo = new JComboBox<>();
+
+            for (String var : sharedVariables) {
+                varCombo.addItem(var);
+            }
+
+            if (block.getType() == BlockType.CONDITION) {
+                JComboBox<String> opCombo = new JComboBox<>(new String[]{"==", "<", ">"});
+                JTextField valueField = new JTextField(10);
+
+                String code = block.getCode();
+                if (code != null && !code.isEmpty()) {
+                    String[] parts = code.split("\\s+");
+                    if (parts.length >= 3) {
+                        varCombo.setSelectedItem(parts[0]);
+                        opCombo.setSelectedItem(parts[1]);
+                        valueField.setText(parts[2]);
+                    }
+                }
+
+                JButton applyButton = new JButton("Застосувати");
+                applyButton.addActionListener(e -> {
+                    block.setCode(varCombo.getSelectedItem() + " " +
+                            opCombo.getSelectedItem() + " " +
+                            valueField.getText());
+                    editDialog.dispose();
+                    repaint();
+                });
+
+                varPanel.add(varCombo);
+                varPanel.add(opCombo);
+                varPanel.add(valueField);
+                varPanel.add(applyButton);
+            } else {
+                JLabel equalsLabel = new JLabel("=");
+                JTextField valueField = new JTextField(10);
+
+                String code = block.getCode();
+                if (code != null && !code.isEmpty()) {
+                    String[] parts = code.split("=");
+                    if (parts.length >= 2) {
+                        varCombo.setSelectedItem(parts[0].trim());
+                        valueField.setText(parts[1].trim());
+                    }
+                }
+
+                JButton applyButton = new JButton("Застосувати");
+                applyButton.addActionListener(e -> {
+                    block.setCode(varCombo.getSelectedItem() + " = " + valueField.getText());
+                    editDialog.dispose();
+                    repaint();
+                });
+
+                varPanel.add(varCombo);
+                varPanel.add(equalsLabel);
+                varPanel.add(valueField);
+                varPanel.add(applyButton);
+            }
+
+            contentPanel.add(varPanel, BorderLayout.CENTER);
+        }
+
+        else {
+            // Стандартне текстове поле для інших типів
+            JTextArea codeArea = new JTextArea(block.getCode(), 3, 30);
+            JButton saveButton = new JButton("Зберегти");
+            saveButton.addActionListener(e -> {
+                block.setCode(codeArea.getText().trim());
+                editDialog.dispose();
+                repaint();
+            });
+
+            contentPanel.add(new JScrollPane(codeArea), BorderLayout.CENTER);
+            contentPanel.add(saveButton, BorderLayout.SOUTH);
+        }
+
+        editDialog.add(contentPanel);
+        editDialog.setVisible(true);
+    }
+
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        Graphics2D g2d = (Graphics2D) g;
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        for (Connection conn : connections) {
+            conn.draw(g2d);
+        }
+
+        for (Block block : blocks) {
+            block.draw(g2d);
+        }
+    }
+}
