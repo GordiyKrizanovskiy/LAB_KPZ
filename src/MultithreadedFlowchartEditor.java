@@ -25,13 +25,14 @@ public class MultithreadedFlowchartEditor {
 
     private JTextArea codeOutputArea;
     private JTextArea testOutputArea;
-//
+
+    private List<TestCase> testCases;
     private JButton addTestCaseButton;
     private JButton runTestsButton;
 
     public MultithreadedFlowchartEditor() {
         sharedVariables = new ArrayList<>();
-        //
+        testCases = new ArrayList<>();
         initializeUI();
     }
 }
@@ -151,13 +152,28 @@ private void initializeActionButtons() {
     loadButton = new JButton("Завантажити проект");
     generateCodeButton = new JButton("Згенерувати код");
     testButton = new JButton("Тестувати");
-    //
+
+    JButton runKButton = new JButton("K-випробування");
+    runKButton.addActionListener(e -> {
+        String input = JOptionPane.showInputDialog(mainFrame, "Скільки виконань (K, від 1 до 20)?", "10");
+        try {
+            int k = Integer.parseInt(input);
+            if (k >= 1 && k <= 20) {
+                runKTests(k);
+            } else {
+                JOptionPane.showMessageDialog(mainFrame, "K повинно бути в межах 1..20", "Помилка", JOptionPane.ERROR_MESSAGE);
+            }
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(mainFrame, "Некоректне число", "Помилка", JOptionPane.ERROR_MESSAGE);
+        }
+    });
+
     saveButton.addActionListener(e -> saveProject());
     loadButton.addActionListener(e -> loadProject());
     generateCodeButton.addActionListener(e -> generatePythonCode());
     testButton.addActionListener(e -> openTestDialog());
 
-    //
+    bottomPanel.add(runKButton);
     bottomPanel.add(saveButton);
     bottomPanel.add(loadButton);
     bottomPanel.add(generateCodeButton);
@@ -254,6 +270,16 @@ private void saveProject() {
     if (fileChooser.showSaveDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
         File file = fileChooser.getSelectedFile();
         try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file))) {JOptionPane.showMessageDialog(mainFrame,
+            ProjectData data = new ProjectData();
+            data.setSharedVariables(new ArrayList<>(sharedVariables));
+            data.setFlowchartData(new ArrayList<>());
+
+            for (FlowchartPanel panel : flowchartPanels) {
+                data.getFlowchartData().add(panel.getFlowchartData());
+            }
+
+            oos.writeObject(data);
+            JOptionPane.showMessageDialog(mainFrame,
                 "Проект успішно збережено",
                 "Успіх", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException e) {
@@ -269,7 +295,7 @@ private void loadProject() {
     if (fileChooser.showOpenDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
         File file = fileChooser.getSelectedFile();
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) {
-            //
+            ProjectData data = (ProjectData) ois.readObject();
 
             sharedVariables.clear();
             variableComboBox.removeAllItems();
@@ -299,7 +325,61 @@ private void loadProject() {
         }
     }
 }
-//
+
+private void generatePythonCode() {
+    for (int i = 0; i < flowchartPanels.size(); i++) {
+        if (flowchartPanels.get(i).findStartBlock() == null) {
+            JOptionPane.showMessageDialog(mainFrame,
+                    "Потік " + (i+1) + " не має стартового блоку!",
+                    "Помилка", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+    }
+
+    StringBuilder pythonCode = new StringBuilder();
+    pythonCode.append("import threading\n\n");
+
+    for (String var : sharedVariables) {
+        pythonCode.append(var).append(" = 0\n");
+    }
+    pythonCode.append("lock = threading.Lock()\n\n");
+
+    for (int i = 0; i < flowchartPanels.size(); i++) {
+        pythonCode.append("def thread_").append(i+1).append("():\n");
+        String threadCode = flowchartPanels.get(i).generatePythonCode();
+        threadCode = threadCode.replaceAll("(?m)^", "    ");
+        pythonCode.append(threadCode).append("\n\n");
+    }
+
+    pythonCode.append("if __name__ == '__main__':\n");
+    for (int i = 0; i < flowchartPanels.size(); i++) {
+        pythonCode.append("    threading.Thread(target=thread_").append(i+1).append(").start()\n");
+    }
+
+    JFileChooser fileChooser = new JFileChooser();
+    fileChooser.setDialogTitle("Зберегти Python файл");
+    fileChooser.setSelectedFile(new File("generated_code.py"));
+    fileChooser.setFileFilter(new FileNameExtensionFilter("Python файли", "py"));
+
+    if (fileChooser.showSaveDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
+        File file = fileChooser.getSelectedFile();
+        if (!file.getName().toLowerCase().endsWith(".py")) {
+            file = new File(file.getParentFile(), file.getName() + ".py");
+        }
+
+        try (PrintWriter writer = new PrintWriter(file)) {
+            writer.write(pythonCode.toString());
+            JOptionPane.showMessageDialog(mainFrame,
+                    "Python код успішно збережено у файл: " + file.getAbsolutePath(),
+                    "Успіх", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(mainFrame,
+                    "Помилка збереження файлу: " + e.getMessage(),
+                    "Помилка", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}
+
 private void openTestDialog() {
     JDialog testDialog = new JDialog(mainFrame, "Тестові випадки", true);
     testDialog.setSize(600, 550);
@@ -362,7 +442,175 @@ private void openTestDialog() {
 
     testDialog.setVisible(true);
 }
-//
+
+
+private void runTests() {
+    if (testCases.isEmpty()) {
+        JOptionPane.showMessageDialog(mainFrame, "Не знайдено тестових випадків");
+        return;
+    }
+
+    JFileChooser fileChooser = new JFileChooser();
+    fileChooser.setDialogTitle("Виберіть Python-файл для тестування");
+    int result = fileChooser.showOpenDialog(mainFrame);
+    if (result != JFileChooser.APPROVE_OPTION) return;
+
+    File file = fileChooser.getSelectedFile();
+    if (!file.exists()) {
+        JOptionPane.showMessageDialog(mainFrame, "Файл не знайдено!", "Помилка", JOptionPane.ERROR_MESSAGE);
+        return;
+    }
+
+    StringBuilder testResults = new StringBuilder();
+    int passed = 0;
+
+    for (TestCase tc : testCases) {
+        testResults.append("Тестовий випадок:\n");
+        testResults.append("Вхідні дані: ").append(tc.getInput()).append("\n");
+        testResults.append("Очікуваний результат: ").append(tc.getExpectedOutput()).append("\n");
+
+        try {
+            Process runProcess = Runtime.getRuntime().exec("python \"" + file.getAbsolutePath() + "\"");
+
+            try (OutputStream stdin = runProcess.getOutputStream();
+                 PrintWriter writer = new PrintWriter(stdin)) {
+                writer.println(tc.getInput());
+                writer.flush();
+            }
+
+            StringBuilder outputBuilder = new StringBuilder();
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(runProcess.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    outputBuilder.append(line.trim()).append("\n");
+                }
+            }
+
+            try (BufferedReader errorReader = new BufferedReader(
+                    new InputStreamReader(runProcess.getErrorStream()))) {
+                String errLine;
+                while ((errLine = errorReader.readLine()) != null) {
+                    outputBuilder.append(errLine.trim()).append("\n");
+                }
+            }
+
+            runProcess.waitFor();  // Чекаємо завершення
+
+            String actualOutput = outputBuilder.toString().trim();
+            testResults.append("Фактичний результат: ").append(actualOutput).append("\n");
+
+            boolean success = actualOutput.contains(tc.getExpectedOutput().trim());
+
+            testResults.append("Результат: ").append(success ? "✔ ПРОЙДЕНО" : "✘ НЕ ПРОЙДЕНО").append("\n\n");
+            if (success) passed++;
+
+        } catch (IOException | InterruptedException e) {
+            testResults.append("Помилка запуску тесту: ").append(e.getMessage()).append("\n\n");
+        }
+    }
+
+    testResults.append("Підсумок: ").append(passed).append("/").append(testCases.size()).append(" тестів пройдено");
+
+    JTextArea textArea = new JTextArea(testResults.toString());
+    textArea.setEditable(false);
+    textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+    JScrollPane scrollPane = new JScrollPane(textArea);
+    scrollPane.setPreferredSize(new Dimension(600, 400));
+
+    JOptionPane.showMessageDialog(mainFrame, scrollPane, "Результати тестування", JOptionPane.INFORMATION_MESSAGE);
+}
+
+private void runKTests(int K) {
+    if (testCases.isEmpty()) {
+        JOptionPane.showMessageDialog(mainFrame, "Не знайдено тестових випадків");
+        return;
+    }
+
+    JFileChooser fileChooser = new JFileChooser();
+    fileChooser.setDialogTitle("Виберіть Python-файл для тестування");
+    if (fileChooser.showOpenDialog(mainFrame) != JFileChooser.APPROVE_OPTION) return;
+
+    File file = fileChooser.getSelectedFile();
+    if (!file.exists()) {
+        JOptionPane.showMessageDialog(mainFrame, "Файл не знайдено!", "Помилка", JOptionPane.ERROR_MESSAGE);
+        return;
+    }
+
+    StringBuilder testResults = new StringBuilder();
+
+    for (TestCase tc : testCases) {
+        testResults.append("Тестовий випадок:\n");
+        testResults.append("Вхідні дані: ").append(tc.getInput()).append("\n");
+        testResults.append("Очікуваний результат: ").append(tc.getExpectedOutput()).append("\n");
+
+        int passed = 0;
+        int totalRun = 0;
+
+        for (int i = 0; i < K; i++) {
+            try {
+                Process runProcess = Runtime.getRuntime().exec("python \"" + file.getAbsolutePath() + "\"");
+
+                try (OutputStream stdin = runProcess.getOutputStream();
+                     PrintWriter writer = new PrintWriter(stdin)) {
+                    writer.println(tc.getInput());
+                    writer.flush();
+                }
+
+                StringBuilder outputBuilder = new StringBuilder();
+
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(runProcess.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        outputBuilder.append(line.trim()).append("\n");
+                    }
+                }
+
+                try (BufferedReader errorReader = new BufferedReader(
+                        new InputStreamReader(runProcess.getErrorStream()))) {
+                    String errLine;
+                    while ((errLine = errorReader.readLine()) != null) {
+                        outputBuilder.append(errLine.trim()).append("\n");
+                    }
+                }
+
+                runProcess.waitFor();
+                totalRun++;
+
+                String actualOutput = outputBuilder.toString().trim();
+                boolean success = actualOutput.contains(tc.getExpectedOutput().trim());
+
+                testResults.append("Варіант ").append(i + 1).append(": ").append(success ? "✔ ПРОЙДЕНО" : "✘ НЕ ПРОЙДЕНО").append("\n");
+                if (success) passed++;
+
+            } catch (IOException | InterruptedException e) {
+                testResults.append("Помилка запуску: ").append(e.getMessage()).append("\n");
+            }
+        }
+
+        double percentage = (double) passed / totalRun * 100.0;
+        testResults.append("Успішних виконань: ").append(passed).append("/").append(totalRun).append(" (")
+                .append(String.format("%.2f", percentage)).append("%)").append("\n\n");
+    }
+
+    JTextArea textArea = new JTextArea(testResults.toString());
+    textArea.setEditable(false);
+    textArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+    JScrollPane scrollPane = new JScrollPane(textArea);
+    scrollPane.setPreferredSize(new Dimension(600, 400));
+
+    JOptionPane.showMessageDialog(mainFrame, scrollPane, "Результати K-випробувань", JOptionPane.INFORMATION_MESSAGE);
+}
+
+public static void main(String[] args) {
+    SwingUtilities.invokeLater(() -> {
+        MultithreadedFlowchartEditor editor = new MultithreadedFlowchartEditor();
+        editor.mainFrame.setTitle("Редактор блок-схем з генерацією Python коду");
+    });
+}
+
 class FlowchartPanel extends JPanel {
     private List<Block> blocks;
     private List<Connection> connections;
@@ -414,7 +662,105 @@ class FlowchartPanel extends JPanel {
         this.connections = new ArrayList<>(data.getConnections());
         repaint();
     }
-//
+
+    public String generatePythonCode() {
+        StringBuilder code = new StringBuilder();
+        Block startBlock = findStartBlock();
+
+        if (startBlock == null) {
+            return "# Не знайдено стартового блоку\n";
+        }
+
+        Set<Block> visited = new HashSet<>();
+        generateBlockPythonCode(startBlock, code, visited, 0);
+
+        return code.toString();
+    }
+
+    private void generateBlockPythonCode(Block block, StringBuilder code, Set<Block> visited, int indentLevel) {
+        if (block == null || visited.contains(block)) return;
+
+        String indent = "    ".repeat(indentLevel);
+        String sanitizedCode = block.getCode() != null ? block.getCode().replace("\n", "").trim() : "";
+
+        switch (block.getType()) {
+            case START:
+                code.append(indent).append("# Початок потоку\n");
+                break;
+
+            case INPUT:
+                code.append(indent)
+                        .append(sanitizedCode)
+                        .append(" = int(input('Введіть значення для ")
+                        .append(sanitizedCode)
+                        .append(": '))\n");
+                break;
+
+            case ASSIGNMENT:
+                if (sanitizedCode.contains("=") && !sanitizedCode.contains("==")) {
+                    code.append(indent).append(sanitizedCode).append("\n");
+                } else {
+                    code.append(indent).append("# [ПОМИЛКА] Некоректне присвоєння: ").append(sanitizedCode).append("\n");
+                }
+                break;
+
+            case OUTPUT:
+                String rawCode = block.getCode().trim();
+
+                // Якщо це ім'я змінної зі спільного списку — виводимо її значення через f-string
+                if (sharedVariables.contains(rawCode) && rawCode.matches("[a-zA-Z_][a-zA-Z_0-9]*")) {
+                    code.append(indent).append("print(f'").append(rawCode).append(" = {").append(rawCode).append("}')\n");
+                } else {
+                    // Інакше — просто текст
+                    rawCode = rawCode.replace("\\", "\\\\").replace("'", "\\'");
+                    code.append(indent).append("print('").append(rawCode).append("')\n");
+                }
+                break;
+
+
+
+
+            case CONDITION:
+                code.append(indent).append("if ").append(sanitizedCode).append(":\n");
+
+                Connection trueConn = findConnectionFrom(block, true);
+                Connection falseConn = findConnectionFrom(block, false);
+
+                Set<Block> visitedTrue = new HashSet<>(visited);
+                Set<Block> visitedFalse = new HashSet<>(visited);
+
+                if (trueConn != null) {
+                    generateBlockPythonCode(trueConn.getTo(), code, visitedTrue, indentLevel + 1);
+                } else {
+                    code.append(indent).append("    pass\n");
+                }
+
+                code.append(indent).append("else:\n");
+
+                if (falseConn != null) {
+                    generateBlockPythonCode(falseConn.getTo(), code, visitedFalse, indentLevel + 1);
+                } else {
+                    code.append(indent).append("    pass\n");
+                }
+
+                Block afterIf = findCommonContinuation(trueConn, falseConn);
+                if (afterIf != null && !visited.contains(afterIf)) {
+                    generateBlockPythonCode(afterIf, code, visited, indentLevel);
+                }
+                return;
+
+            case END:
+                code.append(indent).append("# Кінець потоку\n");
+                return;
+        }
+
+        visited.add(block);
+        Connection conn = findConnectionFrom(block, null);
+        if (conn != null) {
+            generateBlockPythonCode(conn.getTo(), code, visited, indentLevel);
+        }
+    }
+
 private Block findCommonContinuation(Connection trueConn, Connection falseConn) {
     if (trueConn == null || falseConn == null) return null;
     Block trueTarget = trueConn.getTo();
