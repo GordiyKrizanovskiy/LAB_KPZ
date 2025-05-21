@@ -1357,3 +1357,23 @@ class Connection implements Serializable {
 enum BlockType {
     START, END, ASSIGNMENT, INPUT, OUTPUT, CONDITION
 }
+class ProjectData implements Serializable {
+    private List<String> sharedVariables;
+    private List<FlowchartData> flowchartData;
+
+    public List<String> getSharedVariables() {
+        return sharedVariables;
+    }
+
+    public void setSharedVariables(List<String> sharedVariables) {
+        this.sharedVariables = sharedVariables;
+    }
+
+    public List<FlowchartData> getFlowchartData() {
+        return flowchartData;
+    }
+
+    public void setFlowchartData(List<FlowchartData> flowchartData) {
+        this.flowchartData = flowchartData;
+    }
+}
