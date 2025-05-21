@@ -770,3 +770,163 @@ private Block findCommonContinuation(Connection trueConn, Connection falseConn) 
         }
     }
 }
+class Block implements Serializable {
+    private static final int WIDTH = 120;
+    private static final int HEIGHT = 60;
+
+    private BlockType type;
+    private int x, y;
+    private String code;
+
+    public Block(BlockType type, int x, int y) {
+        this.type = type;
+        this.x = x;
+        this.y = y;
+    }
+
+    public BlockType getType() {
+        return type;
+    }
+
+    public int getX() {
+        return x;
+    }
+
+    public int getY() {
+        return y;
+    }
+
+    public int getWidth() {
+        return WIDTH;
+    }
+
+    public int getHeight() {
+        return HEIGHT;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public void setCode(String code) {
+        this.code = code;
+    }
+
+    public void move(int dx, int dy) {
+        x += dx;
+        y += dy;
+    }
+
+    public boolean contains(Point p) {
+        return p.x >= x && p.x <= x + WIDTH && p.y >= y && p.y <= y + HEIGHT;
+    }
+
+    public boolean isNearOutput(Point p) {
+        if (type == BlockType.CONDITION) {
+            int trueX = x + WIDTH;
+            int falseX = x;
+            int outputY = y + HEIGHT / 3;
+            int sensitivity = 15;
+
+            boolean nearTrue = Math.abs(p.x - trueX) < sensitivity &&
+                    Math.abs(p.y - outputY) < sensitivity;
+            boolean nearFalse = Math.abs(p.x - falseX) < sensitivity &&
+                    Math.abs(p.y - outputY) < sensitivity;
+
+            return nearTrue || nearFalse;
+        } else {
+            int outputX = x + WIDTH / 2;
+            int outputY = y + HEIGHT;
+            return Math.abs(p.x - outputX) < 10 && Math.abs(p.y - outputY) < 10;
+        }
+    }
+
+    public Point getOutputPoint() {
+        return new Point(x + WIDTH / 2, y + HEIGHT);
+    }
+
+    public Point getInputPoint() {
+        return new Point(x + WIDTH / 2, y);
+    }
+
+    public Point getTrueOutputPoint() {
+        return new Point(x + WIDTH, y + HEIGHT / 3);
+    }
+
+    public Point getFalseOutputPoint() {
+        return new Point(x, y + HEIGHT / 3);
+    }
+
+    public void draw(Graphics2D g) {
+        Color color;
+        switch (type) {
+            case START:
+                color = Color.GREEN;
+                break;
+            case END:
+                color = Color.RED;
+                break;
+            case CONDITION:
+                color = Color.YELLOW;
+                break;
+            default:
+                color = Color.CYAN;
+        }
+
+        g.setColor(color);
+
+        if (type == BlockType.START || type == BlockType.END) {
+            g.fillOval(x, y, WIDTH, HEIGHT);
+        } else if (type == BlockType.CONDITION) {
+            int[] xPoints = {x + WIDTH/2, x + WIDTH, x + WIDTH/2, x};
+            int[] yPoints = {y, y + HEIGHT/2, y + HEIGHT, y + HEIGHT/2};
+            g.fillPolygon(xPoints, yPoints, 4);
+        } else {
+            g.fillRoundRect(x, y, WIDTH, HEIGHT, 20, 20);
+        }
+
+        g.setColor(Color.BLACK);
+        if (type == BlockType.START || type == BlockType.END) {
+            g.drawOval(x, y, WIDTH, HEIGHT);
+        } else if (type == BlockType.CONDITION) {
+            int[] xPoints = {x + WIDTH/2, x + WIDTH, x + WIDTH/2, x};
+            int[] yPoints = {y, y + HEIGHT/2, y + HEIGHT, y + HEIGHT/2};
+            g.drawPolygon(xPoints, yPoints, 4);
+        } else {
+            g.drawRoundRect(x, y, WIDTH, HEIGHT, 20, 20);
+        }
+
+        String displayText = type.toString();
+        if (code != null && !code.isEmpty()) {
+            displayText += ": " + code;
+        }
+
+        FontMetrics fm = g.getFontMetrics();
+        int textWidth = fm.stringWidth(displayText);
+        if (textWidth > WIDTH - 10) {
+            displayText = type.toString();
+        }
+
+        int textX = x + (WIDTH - fm.stringWidth(displayText)) / 2;
+        int textY = y + (HEIGHT - fm.getHeight()) / 2 + fm.getAscent();
+        g.drawString(displayText, textX, textY);
+
+        g.setColor(Color.RED);
+        if (type != BlockType.END) {
+            Point output = getOutputPoint();
+            if (type == BlockType.CONDITION) {
+                Point trueOutput = getTrueOutputPoint();
+                Point falseOutput = getFalseOutputPoint();
+                g.fillOval(trueOutput.x - 3, trueOutput.y - 3, 6, 6);
+                g.fillOval(falseOutput.x - 3, falseOutput.y - 3, 6, 6);
+            } else {
+                g.fillOval(output.x - 3, output.y - 3, 6, 6);
+            }
+        }
+
+        if (type != BlockType.START) {
+            Point input = getInputPoint();
+            g.fillOval(input.x - 3, input.y - 3, 6, 6);
+        }
+    }
+}
