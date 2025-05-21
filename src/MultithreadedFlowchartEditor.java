@@ -930,3 +930,84 @@ class Block implements Serializable {
         }
     }
 }
+class Connection implements Serializable {
+    private Block from;
+    private Block to;
+    private Point dragPoint;
+    Boolean condition;
+
+    public Connection(Block from, Block to) {
+        this.from = from;
+        this.to = to;
+    }
+
+    public Block getFrom() {
+        return from;
+    }
+
+    public Block getTo() {
+        return to;
+    }
+
+    public void setTo(Block to) {
+        this.to = to;
+    }
+
+    public void setDragPoint(Point p) {
+        this.dragPoint = p;
+    }
+
+    public boolean isCondition() {
+        return condition != null;
+    }
+
+    public void setCondition(boolean condition) {
+        this.condition = condition;
+    }
+
+    public void draw(Graphics2D g) {
+        if (from == null) return;
+
+        Point start, end;
+
+        if (from.getType() == BlockType.CONDITION && condition != null) {
+            start = condition ? from.getTrueOutputPoint() : from.getFalseOutputPoint();
+        } else {
+            start = from.getOutputPoint();
+        }
+
+        if (to != null) {
+            end = to.getInputPoint();
+        } else if (dragPoint != null) {
+            end = dragPoint;
+        } else {
+            return;
+        }
+
+        g.setColor(Color.BLUE);
+        g.drawLine(start.x, start.y, end.x, end.y);
+
+        // Draw arrowhead
+        int arrowSize = 8;
+        double angle = Math.atan2(end.y - start.y, end.x - start.x);
+
+        int x1 = (int) (end.x - arrowSize * Math.cos(angle - Math.PI / 6));
+        int y1 = (int) (end.y - arrowSize * Math.sin(angle - Math.PI / 6));
+        int x2 = (int) (end.x - arrowSize * Math.cos(angle + Math.PI / 6));
+        int y2 = (int) (end.y - arrowSize * Math.sin(angle + Math.PI / 6));
+
+        g.fillPolygon(new int[]{end.x, x1, x2}, new int[]{end.y, y1, y2}, 3);
+
+        // Draw condition label
+        if (from.getType() == BlockType.CONDITION && condition != null) {
+            String label = condition ? "T" : "F";
+            int labelX = (start.x + end.x) / 2;
+            int labelY = (start.y + end.y) / 2;
+            g.drawString(label, labelX, labelY);
+        }
+    }
+}
+
+enum BlockType {
+    START, END, ASSIGNMENT, INPUT, OUTPUT, CONDITION
+}
