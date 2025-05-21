@@ -35,7 +35,7 @@ public class MultithreadedFlowchartEditor {
         testCases = new ArrayList<>();
         initializeUI();
     }
-}
+
 
 private void initializeUI() {
     mainFrame = new JFrame("Редактор блок-схем з генерацією коду");
@@ -265,30 +265,30 @@ private void addVariable() {
     }
 }
 
-private void saveProject() {
-    JFileChooser fileChooser = new JFileChooser();
-    if (fileChooser.showSaveDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
-        File file = fileChooser.getSelectedFile();
-        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file))) {JOptionPane.showMessageDialog(mainFrame,
-            ProjectData data = new ProjectData();
-            data.setSharedVariables(new ArrayList<>(sharedVariables));
-            data.setFlowchartData(new ArrayList<>());
+    private void saveProject() {
+        JFileChooser fileChooser = new JFileChooser();
+        if (fileChooser.showSaveDialog(mainFrame) == JFileChooser.APPROVE_OPTION) {
+            File file = fileChooser.getSelectedFile();
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file))) {
+                ProjectData data = new ProjectData();
+                data.setSharedVariables(new ArrayList<>(sharedVariables));
+                data.setFlowchartData(new ArrayList<>());
 
-            for (FlowchartPanel panel : flowchartPanels) {
-                data.getFlowchartData().add(panel.getFlowchartData());
+                for (FlowchartPanel panel : flowchartPanels) {
+                    data.getFlowchartData().add(panel.getFlowchartData());
+                }
+
+                oos.writeObject(data);
+                JOptionPane.showMessageDialog(mainFrame,
+                        "Проект успішно збережено",
+                        "Успіх", JOptionPane.INFORMATION_MESSAGE);
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(mainFrame,
+                        "Помилка збереження проекту: " + e.getMessage(),
+                        "Помилка", JOptionPane.ERROR_MESSAGE);
             }
-
-            oos.writeObject(data);
-            JOptionPane.showMessageDialog(mainFrame,
-                "Проект успішно збережено",
-                "Успіх", JOptionPane.INFORMATION_MESSAGE);
-        } catch (IOException e) {
-            JOptionPane.showMessageDialog(mainFrame,
-                    "Помилка збереження проекту: " + e.getMessage(),
-                    "Помилка", JOptionPane.ERROR_MESSAGE);
         }
     }
-}
 
 private void loadProject() {
     JFileChooser fileChooser = new JFileChooser();
@@ -610,7 +610,7 @@ public static void main(String[] args) {
         editor.mainFrame.setTitle("Редактор блок-схем з генерацією Python коду");
     });
 }
-
+}
 class FlowchartPanel extends JPanel {
     private List<Block> blocks;
     private List<Connection> connections;
