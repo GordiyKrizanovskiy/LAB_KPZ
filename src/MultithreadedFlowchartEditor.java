@@ -1377,3 +1377,23 @@ class ProjectData implements Serializable {
         this.flowchartData = flowchartData;
     }
 }
+class FlowchartData implements Serializable {
+    private List<Block> blocks;
+    private List<Connection> connections;
+
+    public List<Block> getBlocks() {
+        return blocks;
+    }
+
+    public void setBlocks(List<Block> blocks) {
+        this.blocks = blocks;
+    }
+
+    public List<Connection> getConnections() {
+        return connections;
+    }
+
+    public void setConnections(List<Connection> connections) {
+        this.connections = connections;
+    }
+}
